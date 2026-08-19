@@ -5,7 +5,7 @@
 单聊直连，以及 `/new` `/cancel` `/status` 命令。
 
 ```
-飞书聊天 ──(长连接)──> feishu_bridge.py ──(/api RPC)──> DSH Web (127.0.0.1:52199)
+飞书聊天 ──(长连接)──> feishu_bridge.py ──(/api RPC)──> DSH Web (127.0.0.1:xxxxxx)
 ```
 
 **技术要点**：飞书官方"自建应用 + 长连接事件订阅"（无需公网 IP、无需域名备案），
