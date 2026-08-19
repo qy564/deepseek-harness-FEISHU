@@ -34,7 +34,7 @@ python -m pip install -r requirements.txt
 copy config.example.json config.json
 ```
 
-确认 DSH Web 正在运行（浏览器能打开 http://127.0.0.1:52199）。
+确认 DSH Web 正在运行（浏览器能打开 http://127.0.0.1:xxxxx）。
 
 ---
 
