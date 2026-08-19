@@ -1,0 +1,10 @@
+{
+  "feishu_app_id": "",
+  "feishu_app_secret": "",
+  "feishu_domain": "feishu",
+  "dsh_base_url": "http://127.0.0.1:52199",
+  "dsh_cwd": "",
+  "poll_interval_seconds": 2.0,
+  "turn_timeout_seconds": 600.0,
+  "reply_chunk_chars": 8000
+}
