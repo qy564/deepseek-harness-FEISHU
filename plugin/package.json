@@ -1,0 +1,17 @@
+{
+  "name": "dsh-feishu-bridge",
+  "version": "0.1.0",
+  "description": "飞书远程助手桥接：DSH Web 启动时自动拉起 Python 桥接进程，打开 DSH 即可通过飞书对话",
+  "type": "module",
+  "main": "lib/index.js",
+  "files": [
+    "lib"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}
