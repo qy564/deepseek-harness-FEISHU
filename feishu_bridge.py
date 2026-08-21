@@ -137,10 +137,36 @@ class DshClient:
     def ping(self) -> None:
         self.rpc("session.list", {})
 
-    def create_session(self, cwd: str | None = None) -> str:
-        payload = {"cwd": cwd} if cwd else {}
+    def create_session(self, cwd: str | None = None, workspace_id: str | None = None) -> str:
+        """创建 DSH 会话：优先挂到指定工作区（这样会话会出现在工作区分组里，
+        而不是“未分组”）；没有工作区时退回按 cwd 创建。"""
+        if workspace_id:
+            payload = {"workspaceId": workspace_id}
+        else:
+            payload = {"cwd": cwd} if cwd else {}
         value = self.rpc("session.create", payload)
         return value["sessionId"]
+
+    def workspace_list(self) -> list:
+        value = self.rpc("workspace.list", {})
+        return value.get("items", [])
+
+    def ensure_workspace(self, path: str | None) -> str | None:
+        """找到或注册指定路径的工作区，返回 workspaceId；失败返回 None。"""
+        if not path:
+            return None
+        target = os.path.normcase(os.path.normpath(path))
+        try:
+            for w in self.workspace_list():
+                wpath = w.get("path")
+                if wpath and os.path.normcase(os.path.normpath(wpath)) == target:
+                    return w.get("workspaceId")
+            value = self.rpc("workspace.create", {"path": path})
+            # 响应形状：{ workspace: { workspaceId, path, ... }, created: bool }
+            return (value.get("workspace") or {}).get("workspaceId")
+        except Exception:  # noqa: BLE001
+            log.warning("确保工作区 %s 失败，将退回按 cwd 创建会话", path, exc_info=True)
+            return None
 
     def cancel(self, session_id: str) -> None:
         self.rpc("session.cancel", {"sessionId": session_id})
@@ -241,6 +267,14 @@ class State:
                 encoding="utf-8",
             )
 
+    def delete(self, chat_id: str) -> None:
+        with self._lock:
+            if self._data.pop(chat_id, None) is not None:
+                self.path.write_text(
+                    json.dumps(self._data, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+
 
 # ---------------------------------------------------------------- 飞书事件处理
 MENTION_TOKEN_RE = re.compile(r"@_user_\d+")
@@ -262,6 +296,17 @@ class Bridge:
         self.state = State(BASE_DIR / "state.json")
         self._chat_locks: dict[str, threading.Lock] = {}
         self._locks_guard = threading.Lock()
+        self._workspace_id: str | None = None
+        self._workspace_resolved = False
+
+    def workspace_id(self) -> str | None:
+        """惰性解析 dsh_cwd 对应的工作区（首次需要建会话时才查一次）。"""
+        if not self._workspace_resolved:
+            self._workspace_resolved = True
+            self._workspace_id = self.dsh.ensure_workspace(self.cfg.get("dsh_cwd") or None)
+            if self._workspace_id:
+                log.info("飞书会话将挂载到工作区 %s", self._workspace_id)
+        return self._workspace_id
 
     def chat_lock(self, chat_id: str) -> threading.Lock:
         with self._locks_guard:
@@ -310,7 +355,7 @@ class Bridge:
         if sid:
             return sid
         cwd = self.cfg.get("dsh_cwd") or None
-        sid = self.dsh.create_session(cwd=cwd)
+        sid = self.dsh.create_session(cwd=cwd, workspace_id=self.workspace_id())
         self.state.set(chat_id, sid)
         log.info("为 chat %s 创建 DSH 会话 %s（cwd=%s）", chat_id, sid, cwd)
         return sid
@@ -319,7 +364,7 @@ class Bridge:
     def handle_command(self, chat_id: str, text: str) -> bool:
         cmd = text.strip().lower()
         if cmd in ("/new", "新对话", "新会话"):
-            sid = self.dsh.create_session()
+            sid = self.dsh.create_session(workspace_id=self.workspace_id())
             self.state.set(chat_id, sid)
             self.send_text(chat_id, f"✅ 已开启新对话（会话 {sid[:20]}…）")
             return True
@@ -351,7 +396,22 @@ class Bridge:
                 if self.handle_command(chat_id, text):
                     return
                 sid = self.get_or_create_session(chat_id)
-                reply = self.dsh.ask(sid, text)
+                try:
+                    reply = self.dsh.ask(sid, text)
+                except DshRpcError as exc:
+                    # 会话已失效（例如 DSH 升级/换应用/会话被删后旧映射过期）：
+                    # 丢弃映射并新建会话，用这条消息自动重试一次。
+                    if "not found" in exc.detail and exc.method in (
+                        "session.history", "session.prompt",
+                    ):
+                        log.warning(
+                            "会话 %s 已失效（%s），自动重建后重试", sid, exc
+                        )
+                        self.state.delete(chat_id)
+                        sid = self.get_or_create_session(chat_id)
+                        reply = self.dsh.ask(sid, text)
+                    else:
+                        raise
                 self.send_chunked(chat_id, reply)
                 log.info("chat %s 完成一轮，回复 %d 字", chat_id, len(reply))
             except Exception as exc:  # noqa: BLE001

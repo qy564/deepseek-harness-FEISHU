@@ -1,9 +1,23 @@
 {
   "name": "dsh-feishu-bridge",
-  "version": "0.1.0",
-  "description": "飞书远程助手桥接：DSH Web 启动时自动拉起 Python 桥接进程，打开 DSH 即可通过飞书对话",
+  "version": "0.2.2",
+  "description": "飞书远程助手桥接：DSH Web 启动时自动拉起 Python 桥接进程，打开 DSH 即可通过飞书对话；侧边栏提供飞书对话入口（指示灯：绿=接通 / 红=异常）",
   "type": "module",
   "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-runtime"
+      ],
+      "platform": "web"
+    }
+  },
   "files": [
     "lib"
   ],

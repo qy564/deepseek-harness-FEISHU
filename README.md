@@ -5,7 +5,7 @@
 单聊直连，以及 `/new` `/cancel` `/status` 命令。
 
 ```
-飞书聊天 ──(长连接)──> feishu_bridge.py ──(/api RPC)──> DSH Web (127.0.0.1:xxxxxx)
+飞书聊天 ──(长连接)──> feishu_bridge.py ──(/api RPC)──> DSH Web (127.0.0.1:<当前端口>)
 ```
 
 **技术要点**：飞书官方"自建应用 + 长连接事件订阅"（无需公网 IP、无需域名备案），
@@ -24,17 +24,21 @@ DSH 侧复用浏览器同款 `/api` RPC 协议（`session.create` / `session.pro
 | `bridge.log` | 运行日志（自动生成） |
 | `state.json` | 飞书聊天 ↔ DSH 会话映射（自动生成） |
 
+> **隐私说明**：`config.json`（含 App Secret）、`bridge.log`、`state.json`
+> 都是本地文件，已加入 `.gitignore`，不要提交到仓库；仓库内的 `config.json`
+> 已脱敏（凭证留空，插件模式由 DSH 配置注入凭证，不受影响）。
+
 ---
 
 ## 第一步：本机准备（1 分钟）
 
 ```powershell
-cd <本目录>   # 这个文件夹（含 feishu_bridge.py）
+cd <本目录>   # 本项目文件夹（含 feishu_bridge.py）
 python -m pip install -r requirements.txt
 copy config.example.json config.json
 ```
 
-确认 DSH Web 正在运行（浏览器能打开 http://127.0.0.1:xxxxx）。
+确认 DSH Web 正在运行（浏览器能打开 DSH 界面；插件模式下端口自动跟随，无需手动改）。
 
 ---
 
@@ -96,6 +100,11 @@ copy config.example.json config.json
 
 > `dsh_cwd`：AI 的工作目录（新建 DSH 会话时使用，可留空）。改了这个路径后，
 > 删掉 `state.json` 再重启桥接，下一次对话就会在新目录里开新会话。
+>
+> `dsh_base_url`：**插件模式（推荐）下会自动使用当前 DSH Web 的实际端口**，
+> 不用管这个字段（DSH 每次启动端口都可能变化，写死会导致连不上）。
+> 只有手动运行 `python feishu_bridge.py` 时才需要把它改成当前端口
+> （看 DSH 启动时打印的 URL，或 `netstat -ano | findstr LISTENING` 找 127.0.0.1 的端口）。
 
 启动：
 
@@ -114,17 +123,34 @@ python feishu_bridge.py
 桥接已经打包成 DSH 插件 `dsh-feishu-bridge`（源码在 `plugin/` 目录）：
 
 - 安装：`dsh plugin --profile web add file:<本目录>\plugin`
-- 注册：在 `%USERPROFILE%\.dsh\profiles\web\cordis.patch.yml` 里加
+- 注册：在 `%USERPROFILE%\.dsh\profiles\web\cordis.patch.yml` 里加了
   `feishu-bridge` 行（App ID/Secret、工作目录等都在那里配置）
 - 效果：**打开 DSH 应用 → 桥接自动启动并连上飞书；关闭 DSH → 桥接自动停止**。
-  桥接进程崩溃也会自动重启（配置错误除外）。
+  桥接进程崩溃也会自动重启（配置错误除外）。DSH 端口变化也会自动跟随。
 - 改配置：编辑 `cordis.patch.yml` 里 `feishu-bridge` 的 `config`，保存后
-  热重载生效。
+  重启 DSH 生效（Web 组合当前未启用热重载）。
 - 卸载：从 `cordis.patch.yml` 删除该行，再执行
   `dsh plugin --profile web remove dsh-feishu-bridge`。
 
 > 注意：插件模式和手动模式不要同时运行（会双重回复）。插件模式下不需要
 > 手动执行 `python feishu_bridge.py`。
+
+---
+
+## UI 入口（v0.2 新增，v0.2.1 改为站内打开对话页面）
+
+插件带一个浏览器端 UI（无需单独安装，随插件一起加载）：
+
+- **侧边栏底部"飞书"按钮**（在"设置"齿轮旁边）：小圆点显示桥接状态
+  （绿=已连上飞书，黄=运行中，灰=未运行）。点击**在 DSH 内打开
+  飞书对话页面**——就是普通对话页，内容为飞书上的交流，不跳转飞书。
+  打开逻辑：优先用 `state.json` 的飞书聊天 → DSH 会话映射；没有映射时
+  自动找工作区里最新的飞书会话；再没有就在工作区新建一个。
+- **设置 → 插件 → 飞书对话卡片**：显示运行状态、工作区、当前飞书会话，
+  可 打开对话页面、启动/停止 桥接，并查看最近日志。
+
+> 新增/修改 UI 后需要**重启 DSH 应用**（关闭 DeepSeek Harness 再打开），
+> 浏览器刷新页面即可看到入口。
 
 ---
 
